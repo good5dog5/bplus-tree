@@ -3,6 +3,7 @@ CFLAGS_common ?= -Wall -std=gnu99 -g
 CPPFLAGS_common ?= -I../../include -Wall -g
 CFLAGS_orig = -O0
 CFLAGS_opt  = -O0
+LDFLAGS += -lpthread
 
 MODE ?= debug
 SNAPPY ?= 1
@@ -40,12 +41,12 @@ phonebook_rbtree: $(SRCS_common) phonebook_rbtree.c phonebook_rbtree.h
 phonebook_bptree: $(SRCS_common) ../../bplus.a
 	$(CXX) $(CPPFLAGS_common) $(CFLAGS_opt) \
 		-DIMPL="\"phonebook_orig.h\"" -DBPTREE -o $@ \
-		$(SRCS_common) ../../bplus.a -lpthread
+		$(SRCS_common) ../../bplus.a $(LDFLAGS)
 
 phonebook_bptree_bulk: $(SRCS_common) ../../bplus.a
 	$(CXX) $(CPPFLAGS_common) $(CFLAGS_opt) \
 		-DIMPL="\"phonebook_orig.h\"" -DBPTREE_BULK -o $@ \
-		$(SRCS_common) ../../bplus.a -lpthread
+		$(SRCS_common) ../../bplus.a $(LDFLAGS)
 
 ../../bplus.a:
 	$(MAKE) -C ../.. MODE=$(MODE) SNAPPY=$(SNAPPY)
@@ -54,28 +55,21 @@ run: $(EXEC)
 	echo 3 | sudo tee /proc/sys/vm/drop_caches
 	watch -d -t "./phonebook_orig && echo 3 | sudo tee /proc/sys/vm/drop_caches"
 
+# $(call perf-stat, repeat-times, executable)
+define perf-stat
+	perf stat --repeat $1 								 \
+	-e cache-misses,cache-references,instructions,cycles \
+	./$(strip $2)
+endef
+
 cache-test: $(EXEC)
-	perf stat --repeat 100 \
-		-e cache-misses,cache-references,instructions,cycles \
-		./phonebook_orig
-	perf stat --repeat 100 \
-		-e cache-misses,cache-references,instructions,cycles \
-		./phonebook_opt
-	perf stat --repeat 100 \
-		-e cache-misses,cache-references,instructions,cycles \
-		./phonebook_hash
-	perf stat --repeat 100 \
-		-e cache-misses,cache-references,instructions,cycles \
-		./phonebook_trie
-	perf stat --repeat 100 \
-		-e cache-misses,cache-references,instructions,cycles \
-		./phonebook_rbtree
-	perf stat --repeat 10 \
-		-e cache-misses,cache-references,instructions,cycles \
-		./phonebook_bptree
-	perf stat --repeat 10 \
-		-e cache-misses,cache-references,instructions,cycles \
-		./phonebook_bptree_bulk
+	$(call perf-stat, 100, phonebook_orig)
+	$(call perf-stat, 100, phonebook_opt)
+	$(call perf-stat, 100, phonebook_hash)
+	$(call perf-stat, 100, phonebook_trie)
+	$(call perf-stat, 100, phonebook_rbtree)
+	$(call perf-stat, 10, phonebook_bptree)
+	$(call perf-stat, 10, phonebook_bptree_bulk)
 
 output.txt: cache-test calculate
 	./calculate
